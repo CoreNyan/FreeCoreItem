@@ -1,0 +1,8 @@
+language: zh_CN
+
+editor:
+  items-per-page: 45
+
+actions:
+  enabled: true
+  max-commands-per-trigger: 20

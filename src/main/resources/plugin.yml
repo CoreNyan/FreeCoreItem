@@ -1,0 +1,37 @@
+name: FreeCoreItem
+version: ${version}
+main: io.github.freecoreitem.FreeCoreItemPlugin
+api-version: '26.2'
+authors: [FreeCore]
+description: Lightweight custom item editor and runtime for FreeCore
+commands:
+  fitem:
+    description: Manage FreeCoreItem custom items
+    usage: /fitem help
+    aliases: [freecoreitem]
+permissions:
+  freecoreitem.use:
+    default: true
+  freecoreitem.admin:
+    default: op
+    children:
+      freecoreitem.create: true
+      freecoreitem.delete: true
+      freecoreitem.edit: true
+      freecoreitem.attribute: true
+      freecoreitem.give: true
+      freecoreitem.reload: true
+  freecoreitem.create:
+    default: op
+  freecoreitem.delete:
+    default: op
+  freecoreitem.edit:
+    default: op
+  freecoreitem.attribute:
+    default: op
+  freecoreitem.give:
+    default: op
+  freecoreitem.reload:
+    default: op
+  freecoreitem.cooldown.bypass:
+    default: op
