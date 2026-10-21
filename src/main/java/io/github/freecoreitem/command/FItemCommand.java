@@ -206,6 +206,7 @@ public final class FItemCommand implements CommandExecutor, TabCompleter {
                 case "glint" -> meta.setEnchantmentGlintOverride(parseBoolean(sender, value));
                 case "fire-resistant" -> meta.setFireResistant(parseBoolean(sender, value));
                 case "hide-tooltip" -> meta.setHideTooltip(parseBoolean(sender, value));
+                case "bind-on-give" -> custom.bindOnGive(parseBoolean(sender, value));
                 default -> { invalidProperty(sender, property); return; }
             }
             if (!property.equals("material") && !property.equals("amount")) template.setItemMeta(meta);
@@ -344,6 +345,26 @@ public final class FItemCommand implements CommandExecutor, TabCompleter {
                 case "add" -> action.commands().add(join(args, 4));
                 case "remove" -> action.commands().remove(Integer.parseInt(args[4]));
                 case "clear" -> action.commands().clear();
+                case "condition-add" -> {
+                    String condition = join(args, 4).trim();
+                    String check = condition;
+                    if (check.toLowerCase(Locale.ROOT).startsWith("not ")) {
+                        check = check.substring(4).trim();
+                    } else if (check.startsWith("!")) {
+                        check = check.substring(1).trim();
+                    }
+                    if (check.isBlank() || !(check.regionMatches(true, 0, "permission:", 0, 11)
+                            || check.regionMatches(true, 0, "server:", 0, 7)
+                            || check.regionMatches(true, 0, "title:", 0, 6)
+                            || check.regionMatches(true, 0, "tag:", 0, 4)
+                            || check.regionMatches(true, 0, "placeholder:", 0, 12))) {
+                        lang.send(sender, "command.invalid-operation");
+                        return;
+                    }
+                    action.conditions().add(condition);
+                }
+                case "condition-remove" -> action.conditions().remove(Integer.parseInt(args[4]));
+                case "condition-clear" -> action.conditions().clear();
                 case "cooldown" -> action.cooldownTicks(Integer.parseInt(args[4]));
                 case "consume" -> action.consume(parseBoolean(sender, args[4]));
                 case "cancel" -> action.cancelEvent(parseBoolean(sender, args[4]));
@@ -383,7 +404,14 @@ public final class FItemCommand implements CommandExecutor, TabCompleter {
 
     private CustomItem require(CommandSender sender, String id) {
         CustomItem custom = repository.find(id).orElse(null);
-        if (custom == null) lang.send(sender, "command.item-not-found", "id", id);
+        if (custom == null) {
+            List<String> conflicts = repository.matchAmbiguities(id);
+            if (conflicts.size() > 1) {
+                lang.send(sender, "command.ambiguous-id", "query", id, "matches", String.join(", ", conflicts));
+            } else {
+                lang.send(sender, "command.item-not-found", "id", id);
+            }
+        }
         return custom;
     }
 
@@ -447,7 +475,7 @@ public final class FItemCommand implements CommandExecutor, TabCompleter {
                 .contains(args[0].toLowerCase(Locale.ROOT))) return filter(ids(), args[1]);
         if (args.length == 3 && args[0].equalsIgnoreCase("create")) return filter(List.of("hand", "stone", "diamond_sword"), args[2]);
         if (args.length == 3 && args[0].equalsIgnoreCase("set")) return filter(List.of("material", "name", "amount", "model",
-                "damage", "max-stack", "rarity", "unbreakable", "glint", "fire-resistant", "hide-tooltip"), args[2]);
+                "damage", "max-stack", "rarity", "unbreakable", "glint", "fire-resistant", "hide-tooltip", "bind-on-give"), args[2]);
         if (args.length == 3 && args[0].equalsIgnoreCase("lore")) return filter(List.of("add", "set", "remove", "clear"), args[2]);
         if (args.length == 3 && args[0].equalsIgnoreCase("enchant")) return filter(List.of("add", "remove", "clear"), args[2]);
         if (args.length == 3 && args[0].equalsIgnoreCase("flag")) return filter(List.of("add", "remove", "clear"), args[2]);
@@ -462,8 +490,8 @@ public final class FItemCommand implements CommandExecutor, TabCompleter {
         if (args.length == 7 && args[0].equalsIgnoreCase("attribute") && args[2].equalsIgnoreCase("add"))
             return filter(List.of("ANY", "HAND", "MAINHAND", "OFFHAND", "HEAD", "CHEST", "LEGS", "FEET", "BODY", "SADDLE"), args[6]);
         if (args.length == 3 && args[0].equalsIgnoreCase("action")) return filter(List.of("right-click", "left-click"), args[2]);
-        if (args.length == 4 && args[0].equalsIgnoreCase("action")) return filter(List.of("add", "remove", "clear", "cooldown", "consume", "cancel"), args[3]);
-        if (args.length == 4 && args[0].equalsIgnoreCase("set") && List.of("unbreakable", "glint", "fire-resistant", "hide-tooltip").contains(args[2].toLowerCase(Locale.ROOT)))
+        if (args.length == 4 && args[0].equalsIgnoreCase("action")) return filter(List.of("add", "remove", "clear", "condition-add", "condition-remove", "condition-clear", "cooldown", "consume", "cancel"), args[3]);
+        if (args.length == 4 && args[0].equalsIgnoreCase("set") && List.of("unbreakable", "glint", "fire-resistant", "hide-tooltip", "bind-on-give").contains(args[2].toLowerCase(Locale.ROOT)))
             return filter(List.of("true", "false"), args[3]);
         if (args.length == 4 && args[0].equalsIgnoreCase("set") && args[2].equalsIgnoreCase("rarity"))
             return filter(Arrays.stream(ItemRarity.values()).map(value -> value.name().toLowerCase(Locale.ROOT)).toList(), args[3]);
@@ -475,7 +503,7 @@ public final class FItemCommand implements CommandExecutor, TabCompleter {
     }
 
     private List<String> ids() {
-        return repository.all().stream().map(CustomItem::id).toList();
+        return repository.completionSuggestions();
     }
 
     private static List<String> filter(List<String> values, String prefix) {

@@ -5,6 +5,7 @@ command:
   no-permission: '<red>你没有权限执行此操作。</red>'
   invalid-id: '<red>物品 ID 只能包含小写字母、数字、下划线和连字符。</red>'
   item-not-found: '<red>找不到自定义物品 <white>%id%</white>。</red>'
+  ambiguous-id: '<yellow>物品 ID <white>%query%</white> 存在多个分类重名，请指定完整路径：<gold>%matches%</gold></yellow>'
   item-exists: '<red>自定义物品 <white>%id%</white> 已存在。</red>'
   create-success: '<green>已创建自定义物品 <white>%id%</white>。</green>'
   create-from-hand-success: '<green>已从主手物品创建 <white>%id%</white>。</green>'
@@ -34,14 +35,15 @@ command:
     - '<aqua>/fitem delete <ID></aqua> <gray>- 删除物品</gray>'
     - '<aqua>/fitem give <ID> [玩家] [数量]</aqua> <gray>- 获取物品</gray>'
     - '<aqua>/fitem list</aqua> <gray>- 查看所有物品</gray>'
-    - '<aqua>/fitem set <ID> <属性> <值></aqua> <gray>- 编辑基础属性</gray>'
+    - '<aqua>/fitem set <ID> <属性> <值></aqua> <gray>- 编辑基础属性（bind-on-give 开启 give 后仅主人可用左右键）</gray>'
     - '<aqua>/fitem lore <ID> <add|set|remove|clear> ...</aqua>'
     - '<aqua>/fitem enchant <ID> <add|remove|clear> ...</aqua>'
     - '<aqua>/fitem flag <ID> <add|remove|clear> ...</aqua>'
     - '<aqua>/fitem attribute <ID> <add|clear> ...</aqua> <gray>- 编辑属性修饰符</gray>'
-    - '<aqua>/fitem action <ID> <right-click|left-click> <add|remove|clear|cooldown|consume|cancel> ...</aqua>'
+    - '<aqua>/fitem action <ID> <right-click|left-click> <add|remove|clear|condition-add|condition-remove|condition-clear|cooldown|consume|cancel> ...</aqua>'
+    - '<gray>命令可写 [if server:survival] [message] 提示；多段 [if ...] 均须满足。原 condition-add 是整组命令的前置条件。</gray>'
     - '<aqua>/fitem reload</aqua> <gray>- 重载插件</gray>'
-  set-properties: '<gray>属性：material、name、amount、model、damage、max-stack、rarity、unbreakable、glint、fire-resistant、hide-tooltip</gray>'
+  set-properties: '<gray>属性：material、name、amount、model、damage、max-stack、rarity、unbreakable、glint、fire-resistant、hide-tooltip、bind-on-give</gray>'
 
 input:
   cancel-keyword: 'cancel'
@@ -57,13 +59,27 @@ input:
     max-stack: '<yellow>请输入最大堆叠数 1-99；输入 none 使用材质默认值。</yellow>'
     enchant: '<yellow>请输入“附魔 等级”，例如 sharpness 5；输入 clear 清空。</yellow>'
     flag: '<yellow>请输入旗标，例如 HIDE_ATTRIBUTES；输入 clear 清空。</yellow>'
-    right-action: '<yellow>请输入右键动作命令。支持 [console]、[player]、[message]；输入 clear 清空。</yellow>'
-    left-action: '<yellow>请输入左键动作命令。支持 [console]、[player]、[message]；输入 clear 清空。</yellow>'
+    right-action: '<yellow>请输入右键动作命令。支持 [console]、[player]、[op]、[message]、[consume]/[remove]（消耗物品）；支持前置 [if ...] 条件；支持使用 ;; 连接多条命令；输入 clear 清空。</yellow>'
+    left-action: '<yellow>请输入左键动作命令。支持 [console]、[player]、[op]、[message]、[consume]/[remove]（消耗物品）；支持前置 [if ...] 条件；支持使用 ;; 连接多条命令；输入 clear 清空。</yellow>'
+    right-condition: '<yellow>请输入右键条件：server:子服标识、permission:节点、title:称号文本 或 placeholder:%变量%=值（支持 not/! 前缀及 ==,!=,>,>=,<,<= 比较）；输入 clear 清空。</yellow>'
+    left-condition: '<yellow>请输入左键条件：server:子服标识、permission:节点、title:称号文本 或 placeholder:%变量%=值（支持 not/! 前缀及 ==,!=,>,>=,<,<= 比较）；输入 clear 清空。</yellow>'
 
 gui:
+  common:
+    root: '根目录'
   browser:
-    title: '<gradient:#4dd0e1:#80cbc4>自定义物品</gradient> <gray>(%page%/%pages%)</gray>'
+    title: '<gradient:#4dd0e1:#80cbc4>自定义物品</gradient> <yellow>[%folder%]</yellow> <gray>(%page%/%pages%)</gray>'
+    folder:
+      name: '<gold><bold>📁 %name%</bold></gold>'
+      lore:
+        - '<gray>包含 <white>%count%</white> 个物品/子分类</gray>'
+        - '<yellow>点击进入文件夹</yellow>'
+    parent:
+      name: '<aqua>⬆ 返回上一级</aqua>'
+      lore:
+        - '<gray>返回到上一层目录</gray>'
     item-lore:
+      - '<dark_gray>目录: %directory%</dark_gray>'
       - '<dark_gray>ID: %id%</dark_gray>'
       - '<gray>左键：编辑</gray>'
       - '<gray>右键：获取一件</gray>'
@@ -131,10 +147,10 @@ gui:
       lore: ['<gray>当前数量：<white>%count%</white></gray>', '<yellow>左键输入旗标</yellow>', '<red>右键清空</red>']
     right-action:
       name: '<gold>右键动作</gold>'
-      lore: ['<gray>当前命令：<white>%count%</white></gray>', '<yellow>左键追加命令</yellow>', '<red>右键清空</red>']
+      lore: ['<gray>命令数/全局条件数：<white>%count%</white></gray>', '<yellow>左键追加命令</yellow>', '<yellow>Shift 点击添加条件</yellow>', '<red>右键清空命令</red>']
     left-action:
       name: '<gold>左键动作</gold>'
-      lore: ['<gray>当前命令：<white>%count%</white></gray>', '<yellow>左键追加命令</yellow>', '<red>右键清空</red>']
+      lore: ['<gray>命令数/全局条件数：<white>%count%</white></gray>', '<yellow>左键追加命令</yellow>', '<yellow>Shift 点击添加条件</yellow>', '<red>右键清空命令</red>']
     back:
       name: '<yellow>返回物品列表</yellow>'
       lore: []
@@ -172,6 +188,7 @@ gui:
       name: '<green>取消</green>'
       lore: []
   common:
+    root: '<gray>根目录</gray>'
     enabled: '<green>启用</green>'
     disabled: '<red>禁用</red>'
     none: '<gray>无</gray>'
@@ -179,3 +196,4 @@ gui:
 
 action:
   cooldown: '<yellow>该物品还需等待 <white>%seconds%</white> 秒才能再次使用。</yellow>'
+  not-owner: '<red>这件绑定物品只能由它的主人使用。</red>'

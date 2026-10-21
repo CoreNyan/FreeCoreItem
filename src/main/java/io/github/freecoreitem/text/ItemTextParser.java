@@ -19,11 +19,17 @@ public final class ItemTextParser {
     }
 
     public static Component parse(String input) {
+        String value = input == null ? "" : input;
         Component parsed;
-        if (LEGACY_CODE.matcher(input).find()) {
-            parsed = LEGACY.deserialize(input);
-        } else {
-            parsed = MINI_MESSAGE.deserialize(input);
+        try {
+            if (LEGACY_CODE.matcher(value).find()) {
+                parsed = LEGACY.deserialize(value);
+            } else {
+                parsed = MINI_MESSAGE.deserialize(value);
+            }
+        } catch (RuntimeException exception) {
+            // Chat input is user data: malformed MiniMessage must not abort the editor save.
+            parsed = Component.text(value);
         }
         return nonItalic(parsed);
     }

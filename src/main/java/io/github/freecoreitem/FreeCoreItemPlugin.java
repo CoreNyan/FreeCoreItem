@@ -5,6 +5,8 @@ import io.github.freecoreitem.command.FItemCommand;
 import io.github.freecoreitem.editor.ChatInputManager;
 import io.github.freecoreitem.editor.ItemEditorMenu;
 import io.github.freecoreitem.item.ItemService;
+import io.github.freecoreitem.listener.ItemProtectionListener;
+import io.github.freecoreitem.listener.TradeBindingListener;
 import io.github.freecoreitem.lang.Lang;
 import io.github.freecoreitem.storage.ItemRepository;
 import org.bukkit.command.PluginCommand;
@@ -35,6 +37,8 @@ public final class FreeCoreItemPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(chatInput, this);
         getServer().getPluginManager().registerEvents(editor, this);
         getServer().getPluginManager().registerEvents(items, this);
+        getServer().getPluginManager().registerEvents(new ItemProtectionListener(this, items), this);
+        getServer().getPluginManager().registerEvents(new TradeBindingListener(this, items), this);
         getServer().getPluginManager().registerEvents(new ItemActionListener(this, items, lang), this);
         getLogger().info("Loaded " + repository.size() + " custom items.");
     }

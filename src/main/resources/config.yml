@@ -1,4 +1,7 @@
 language: zh_CN
+# Set a distinct ID on each backend in plugins/FreeCoreItem/config.yml.
+# An unset ID never satisfies [if server:...] or the global server: condition.
+server-id: ''
 
 editor:
   items-per-page: 45

@@ -28,8 +28,11 @@ import org.bukkit.plugin.Plugin;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 public final class ItemEditorMenu implements Listener {
@@ -53,34 +56,105 @@ public final class ItemEditorMenu implements Listener {
     }
 
     public void openBrowser(Player player, int requestedPage) {
-        List<CustomItem> all = new ArrayList<>(repository.all());
+        openBrowser(player, "", requestedPage);
+    }
+
+    public void openBrowser(Player player, String currentFolder, int requestedPage) {
+        String folder = currentFolder == null ? "" : currentFolder.trim();
+        List<BrowserEntry> entries = listEntriesInFolder(folder);
         int pageSize = Math.max(1, Math.min(45, plugin.getConfig().getInt("editor.items-per-page", 45)));
-        int pages = Math.max(1, (all.size() + pageSize - 1) / pageSize);
+        int pages = Math.max(1, (entries.size() + pageSize - 1) / pageSize);
         int page = Math.max(0, Math.min(requestedPage, pages - 1));
-        EditorHolder holder = new EditorHolder(EditorHolder.View.BROWSER, null, page);
+
+        EditorHolder holder = new EditorHolder(EditorHolder.View.BROWSER, null, folder, page);
+        String folderDisplay = folder.isEmpty() ? lang.plain("gui.common.root") : folder;
         Inventory inventory = Bukkit.createInventory(holder, 54, lang.component("gui.browser.title",
-                "page", Integer.toString(page + 1), "pages", Integer.toString(pages)));
+                "folder", folderDisplay, "page", Integer.toString(page + 1), "pages", Integer.toString(pages)));
         holder.attach(inventory);
         fill(inventory);
+
         int start = page * pageSize;
-        for (int index = 0; index < pageSize && start + index < all.size(); index++) {
-            CustomItem custom = all.get(start + index);
-            ItemStack icon = items.build(custom, 1);
-            ItemMeta meta = icon.getItemMeta();
-            List<Component> lore = new ArrayList<>(Optional.ofNullable(meta.lore()).orElse(List.of()));
-            lore.addAll(lang.components("gui.browser.item-lore", "id", custom.id()));
-            meta.lore(lore);
-            tag(meta, "item:" + custom.id());
-            icon.setItemMeta(meta);
-            inventory.setItem(CONTENT_SLOTS[index], icon);
+        for (int index = 0; index < pageSize && start + index < entries.size(); index++) {
+            BrowserEntry entry = entries.get(start + index);
+            if (entry.isFolder()) {
+                ItemStack icon = new ItemStack(Material.CHEST);
+                ItemMeta meta = icon.getItemMeta();
+                meta.displayName(lang.component("gui.browser.folder.name", "name", entry.name()));
+                meta.lore(lang.components("gui.browser.folder.lore", "count", Integer.toString(entry.count())));
+                tag(meta, "folder:" + entry.fullPath());
+                icon.setItemMeta(meta);
+                inventory.setItem(CONTENT_SLOTS[index], icon);
+            } else {
+                CustomItem custom = entry.item();
+                ItemStack icon = items.build(custom, 1);
+                ItemMeta meta = icon.getItemMeta();
+                List<Component> lore = new ArrayList<>(Optional.ofNullable(meta.lore()).orElse(List.of()));
+                lore.addAll(lang.components("gui.browser.item-lore", "id", custom.id(),
+                        "directory", directoryOf(custom.id())));
+                meta.lore(lore);
+                tag(meta, "item:" + custom.id());
+                icon.setItemMeta(meta);
+                inventory.setItem(CONTENT_SLOTS[index], icon);
+            }
         }
+
         if (page > 0) inventory.setItem(45, button(Material.ARROW, "gui.browser.previous", "previous",
                 "page", Integer.toString(page)));
+        if (!folder.isEmpty()) {
+            inventory.setItem(48, button(Material.OAK_DOOR, "gui.browser.parent", "parent"));
+        }
         inventory.setItem(49, button(Material.ANVIL, "gui.browser.create", "create"));
         inventory.setItem(50, button(Material.BARRIER, "gui.browser.close", "close"));
         if (page + 1 < pages) inventory.setItem(53, button(Material.ARROW, "gui.browser.next", "next",
                 "page", Integer.toString(page + 2)));
         player.openInventory(inventory);
+    }
+
+    private record BrowserEntry(boolean isFolder, String name, String fullPath, int count, CustomItem item) {}
+
+    private List<BrowserEntry> listEntriesInFolder(String currentFolder) {
+        String prefix = currentFolder.isEmpty() ? "" : (currentFolder + "/");
+        Map<String, Integer> subFolders = new LinkedHashMap<>();
+        List<CustomItem> currentItems = new ArrayList<>();
+
+        for (CustomItem item : repository.all()) {
+            String id = item.id();
+            if (currentFolder.isEmpty()) {
+                int slash = id.indexOf('/');
+                if (slash > 0) {
+                    String sub = id.substring(0, slash);
+                    subFolders.put(sub, subFolders.getOrDefault(sub, 0) + 1);
+                } else {
+                    currentItems.add(item);
+                }
+            } else {
+                if (id.startsWith(prefix)) {
+                    String rel = id.substring(prefix.length());
+                    int slash = rel.indexOf('/');
+                    if (slash > 0) {
+                        String sub = prefix + rel.substring(0, slash);
+                        subFolders.put(sub, subFolders.getOrDefault(sub, 0) + 1);
+                    } else {
+                        currentItems.add(item);
+                    }
+                }
+            }
+        }
+
+        List<BrowserEntry> entries = new ArrayList<>();
+        List<String> sortedFolders = new ArrayList<>(subFolders.keySet());
+        sortedFolders.sort(String.CASE_INSENSITIVE_ORDER);
+        for (String fPath : sortedFolders) {
+            String fName = fPath.contains("/") ? fPath.substring(fPath.lastIndexOf('/') + 1) : fPath;
+            entries.add(new BrowserEntry(true, fName, fPath, subFolders.get(fPath), null));
+        }
+
+        currentItems.sort(Comparator.comparing(CustomItem::id));
+        for (CustomItem ci : currentItems) {
+            String name = ci.id().contains("/") ? ci.id().substring(ci.id().lastIndexOf('/') + 1) : ci.id();
+            entries.add(new BrowserEntry(false, name, ci.id(), 0, ci));
+        }
+        return entries;
     }
 
     public void openEditor(Player player, String id) {
@@ -123,9 +197,9 @@ public final class ItemEditorMenu implements Listener {
         inventory.setItem(28, editorButton(Material.ENCHANTING_TABLE, "enchant", Integer.toString(meta.getEnchants().size())));
         inventory.setItem(29, editorButton(Material.PAPER, "flag", Integer.toString(meta.getItemFlags().size())));
         inventory.setItem(31, editorButton(Material.WARPED_FUNGUS_ON_A_STICK, "right-action",
-                Integer.toString(custom.rightClick().commands().size())));
+                Integer.toString(custom.rightClick().commands().size()) + "/" + custom.rightClick().conditions().size()));
         inventory.setItem(32, editorButton(Material.BLAZE_ROD, "left-action",
-                Integer.toString(custom.leftClick().commands().size())));
+                Integer.toString(custom.leftClick().commands().size()) + "/" + custom.leftClick().conditions().size()));
         inventory.setItem(45, button(Material.ARROW, "gui.editor.back", "back"));
         inventory.setItem(53, button(Material.TNT, "gui.editor.delete", "delete"));
         player.openInventory(inventory);
@@ -189,6 +263,11 @@ public final class ItemEditorMenu implements Listener {
     }
 
     private void handleBrowser(Player player, EditorHolder holder, String action, ClickType click) {
+        if (action.startsWith("folder:")) {
+            String folder = action.substring(7);
+            openBrowser(player, folder, 0);
+            return;
+        }
         if (action.startsWith("item:")) {
             String id = action.substring(5);
             if (click.isRightClick()) give(player, id);
@@ -196,8 +275,14 @@ public final class ItemEditorMenu implements Listener {
             return;
         }
         switch (action) {
-            case "previous" -> openBrowser(player, holder.page() - 1);
-            case "next" -> openBrowser(player, holder.page() + 1);
+            case "previous" -> openBrowser(player, holder.directory(), holder.page() - 1);
+            case "next" -> openBrowser(player, holder.directory(), holder.page() + 1);
+            case "parent" -> {
+                String cur = holder.directory();
+                int idx = cur.lastIndexOf('/');
+                String parent = idx > 0 ? cur.substring(0, idx) : "";
+                openBrowser(player, parent, 0);
+            }
             case "close" -> player.closeInventory();
             case "create" -> requestCreate(player);
             default -> { }
@@ -208,7 +293,11 @@ public final class ItemEditorMenu implements Listener {
         CustomItem custom = repository.find(id).orElse(null);
         if (custom == null) return;
         if (action.equals("preview")) { give(player, id); return; }
-        if (action.equals("back")) { openBrowser(player, 0); return; }
+        if (action.equals("back")) {
+            String dir = directoryOf(id);
+            openBrowser(player, dir.equals("root") ? "" : dir, 0);
+            return;
+        }
         if (action.equals("delete")) { openDelete(player, id); return; }
         if (action.equals("lore")) { openLoreEditor(player, id); return; }
         if (action.equals("amount")) {
@@ -245,6 +334,10 @@ public final class ItemEditorMenu implements Listener {
             meta.setRarity(values[next]);
             template.setItemMeta(meta);
             saveAndOpen(player, custom, template);
+            return;
+        }
+        if ((action.equals("right-action") || action.equals("left-action")) && click.isShiftClick()) {
+            requestCondition(player, custom, action);
             return;
         }
         if ((action.equals("enchant") || action.equals("flag")
@@ -341,6 +434,44 @@ public final class ItemEditorMenu implements Listener {
         input.request(player, prompt,
                 (target, value) -> applyInput(target, custom.id(), property, value),
                 target -> openEditor(target, custom.id()));
+    }
+
+    private void requestCondition(Player player, CustomItem custom, String property) {
+        String prompt = property.equals("right-action")
+                ? "input.prompt.right-condition" : "input.prompt.left-condition";
+        input.request(player, prompt, (target, value) -> {
+            String check = value.trim();
+            if (check.toLowerCase(Locale.ROOT).startsWith("not ")) {
+                check = check.substring(4).trim();
+            } else if (check.startsWith("!")) {
+                check = check.substring(1).trim();
+            }
+            if (value.equalsIgnoreCase("clear")) {
+                action(custom, property).conditions().clear();
+            } else if (check.regionMatches(true, 0, "permission:", 0, 11)
+                    || check.regionMatches(true, 0, "server:", 0, 7)
+                    || check.regionMatches(true, 0, "title:", 0, 6)
+                    || check.regionMatches(true, 0, "tag:", 0, 4)
+                    || check.regionMatches(true, 0, "placeholder:", 0, 12)) {
+                action(custom, property).conditions().add(value);
+            } else {
+                lang.send(target, "command.invalid-operation");
+                openEditor(target, custom.id());
+                return;
+            }
+            try {
+                repository.save(custom);
+                lang.send(target, "command.update-success", "id", custom.id(), "property", property + " condition");
+                openEditor(target, custom.id());
+            } catch (IOException exception) {
+                saveFailed(target, exception);
+                openEditor(target, custom.id());
+            }
+        }, target -> openEditor(target, custom.id()));
+    }
+
+    private io.github.freecoreitem.model.ItemAction action(CustomItem custom, String property) {
+        return property.equals("right-action") ? custom.rightClick() : custom.leftClick();
     }
 
     private void requestLoreAdd(Player player, String id) {
@@ -590,6 +721,11 @@ public final class ItemEditorMenu implements Listener {
         meta.displayName(lang.component("gui.common.filler-name"));
         filler.setItemMeta(meta);
         for (int slot = 0; slot < inventory.getSize(); slot++) inventory.setItem(slot, filler);
+    }
+
+    private String directoryOf(String id) {
+        int separator = id.lastIndexOf('/');
+        return separator < 0 ? lang.plain("gui.common.root") : id.substring(0, separator);
     }
 
     private String state(boolean enabled) {
